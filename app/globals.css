@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+input, textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  outline: none;
+  background: white;
+  color: #111827;
+}
+
+input:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2px #bfdbfe;
+}
+
+button {
+  cursor: pointer;
+}
