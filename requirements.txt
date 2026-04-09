@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
+cryptography
+python-dotenv
+scikit-learn
+numpy
+pandas
+joblib
+itsdangerous
+starlette
+python-multipart
