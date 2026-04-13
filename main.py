@@ -53,8 +53,7 @@ async def startup_event():
     load_model()
     print("🚀 Password Analyzer Backend is ready!")
 
-
-#Health check 
+# ─── Root ─────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
 async def root():
     return {
@@ -64,6 +63,39 @@ async def root():
     }
 
 
+# ─── Health Check with DB + Model status ─────────────────────────────────────
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok"}
+    from sqlalchemy import text
+
+    # Check database connection
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_status = "connected ✅"
+    except Exception as e:
+        db_status = f"disconnected ❌ ({str(e)})"
+
+    # Check ML model
+    try:
+        from app.ml.password_classifier import _model
+        model_status = "loaded ✅" if _model is not None else "not loaded ❌"
+    except:
+        model_status = "not loaded ❌"
+
+    # Check tables exist
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT COUNT(*) FROM users"))
+            conn.execute(text("SELECT COUNT(*) FROM password_analysis"))
+        tables_status = "users + password_analysis ✅"
+    except Exception as e:
+        tables_status = f"error ❌ ({str(e)})"
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "tables": tables_status,
+        "ml_model": model_status,
+        "version": "1.0.0"
+    }

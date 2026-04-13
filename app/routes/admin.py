@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
-from app.core.security import hash_password_sha256, require_admin_session
+from app.core.security import hash_password_sha256, require_admin_session, verify_password
 import os
 from dotenv import load_dotenv
 
@@ -11,6 +11,12 @@ load_dotenv()
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+# ─── Nepal Time Zone ──────────────────────────────────────────────────────────
+NPT = timezone(timedelta(hours=5, minutes=45))
+
+def now_npt():
+    return datetime.now(NPT).replace(tzinfo=None)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -84,7 +90,7 @@ async def create_user(
         contact=body.contact,
         username=body.username,
         password=hashed_pw,
-        created_at=datetime.utcnow()
+        created_at=now_npt()       # ← Nepal Time ✅
     )
 
     db.add(new_user)
@@ -126,10 +132,11 @@ async def get_all_users(
             "name": user.name,
             "username": user.username,
             "contact": user.contact,
-            "no_of_passwords": len(analyses),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
             "latest_hash": latest.hash_password if latest else None,
             "latest_strength": latest.strength if latest else None,
             "latest_suggestion": latest.suggestion if latest else None,
+            "latest_analysed_at": latest.analysed_at.isoformat() if latest and latest.analysed_at else None,
         })
 
     return result
@@ -202,3 +209,43 @@ async def delete_user(
     db.commit()
 
     return {"message": f"User {user_id} deleted successfully"}
+
+
+# ─── POST /admin/auth/login (Combined login for both admin and user) ──────────
+@router.post("/auth/login")
+async def combined_login(
+    request: Request,
+    body: LoginRequest,
+    db: Session = Depends(get_db)
+):
+    from app.models.schemas import User
+
+    # Check if admin
+    if body.username == ADMIN_USERNAME and body.password == ADMIN_PASSWORD:
+        request.session["admin_logged_in"] = True
+        request.session["admin_username"] = body.username
+        return {
+            "message": "Login successful",
+            "role": "admin",
+            "username": body.username
+        }
+
+    # Check if user exists in database
+    user = db.query(User).filter(User.username == body.username).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Verify password
+    if not verify_password(body.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Store user session
+    request.session["user_id"] = user.user_id
+    request.session["username"] = user.username
+
+    return {
+        "message": "Login successful",
+        "role": "user",
+        "user_id": user.user_id,
+        "username": user.username
+    }

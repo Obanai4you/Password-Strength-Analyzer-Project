@@ -1,12 +1,18 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.core.security import verify_password, require_user_session, hash_password_sha256
 from app.ml.password_classifier import classify_password
 
 router = APIRouter(prefix="/user", tags=["User"])
+
+# ─── Nepal Time Zone ──────────────────────────────────────────────────────────
+NPT = timezone(timedelta(hours=5, minutes=45))
+
+def now_npt():
+    return datetime.now(NPT).replace(tzinfo=None)
 
 
 # ─── Pydantic Models ──────────────────────────────────────────────────────────
@@ -86,13 +92,13 @@ async def analyse_password(
     # Step 2: ML classification
     result = classify_password(body.password)
 
-    # Step 3: Save to DB
+    # Step 3: Save to DB with Nepal Time
     analysis = PasswordAnalysis(
         user_id=user_id,
         hash_password=hashed,
         strength=result["strength"],
         suggestion=result["suggestion"],
-        analysed_at=datetime.utcnow()
+        analysed_at=now_npt()      # ← Nepal Time ✅
     )
     db.add(analysis)
     db.commit()
@@ -123,7 +129,7 @@ async def get_user_history(
             "hash_password": a.hash_password,
             "strength": a.strength,
             "suggestion": a.suggestion,
-            "analysed_at": a.analysed_at,
+            "analysed_at": a.analysed_at.isoformat() if a.analysed_at else None,
         }
         for a in analyses
     ]
