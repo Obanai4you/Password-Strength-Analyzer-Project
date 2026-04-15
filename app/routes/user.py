@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from datetime import datetime, timezone, timedelta
+
 from app.core.database import get_db
 from app.core.security import verify_password, require_user_session, hash_password_sha256
 from app.ml.password_classifier import classify_password
@@ -20,20 +21,31 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
 class AnalyseRequest(BaseModel):
     password: str
 
+    @validator("password")
+    def validate_password(cls, v):
+        if v is None:
+            raise ValueError("Password cannot be empty")
 
-# ─── POST /user/login ─────────────────────────────────────────────────────────
+        v = v.strip()
+
+        if len(v) == 0:
+            raise ValueError("Password cannot be empty")
+
+        return v
+
+
+# ─── LOGIN ────────────────────────────────────────────────────────────────────
 @router.post("/login")
 async def user_login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     from app.models.schemas import User
 
     user = db.query(User).filter(User.username == body.username).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    if not verify_password(body.password, user.password):
+    if not user or not verify_password(body.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     request.session["user_id"] = user.user_id
@@ -47,14 +59,14 @@ async def user_login(request: Request, body: LoginRequest, db: Session = Depends
     }
 
 
-# ─── POST /user/logout ────────────────────────────────────────────────────────
+# ─── LOGOUT ───────────────────────────────────────────────────────────────────
 @router.post("/logout")
 async def user_logout(request: Request):
     request.session.clear()
     return {"message": "Logged out successfully"}
 
 
-# ─── GET /user/me ─────────────────────────────────────────────────────────────
+# ─── CURRENT USER ─────────────────────────────────────────────────────────────
 @router.get("/me")
 async def get_current_user(
     request: Request,
@@ -64,6 +76,7 @@ async def get_current_user(
     from app.models.schemas import User
 
     user = db.query(User).filter(User.user_id == user_id).first()
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -76,7 +89,7 @@ async def get_current_user(
     }
 
 
-# ─── POST /user/analyse ───────────────────────────────────────────────────────
+# ─── PASSWORD ANALYSIS ───────────────────────────────────────────────────────
 @router.post("/analyse")
 async def analyse_password(
     request: Request,
@@ -86,20 +99,24 @@ async def analyse_password(
 ):
     from app.models.schemas import PasswordAnalysis
 
-    # Step 1: SHA-256 hash
-    hashed = hash_password_sha256(body.password)
+    # Step 1: Clean password (already validated by Pydantic)
+    password = body.password
 
-    # Step 2: ML classification
-    result = classify_password(body.password)
+    # Step 2: Hash password
+    hashed = hash_password_sha256(password)
 
-    # Step 3: Save to DB with Nepal Time
+    # Step 3: ML classification
+    result = classify_password(password)
+
+    # Step 4: Save to DB
     analysis = PasswordAnalysis(
         user_id=user_id,
         hash_password=hashed,
         strength=result["strength"],
         suggestion=result["suggestion"],
-        analysed_at=now_npt()      # ← Nepal Time ✅
+        analysed_at=now_npt()
     )
+
     db.add(analysis)
     db.commit()
 
@@ -110,7 +127,7 @@ async def analyse_password(
     }
 
 
-# ─── GET /user/history ────────────────────────────────────────────────────────
+# ─── HISTORY ──────────────────────────────────────────────────────────────────
 @router.get("/history")
 async def get_user_history(
     request: Request,

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.core.security import hash_password_sha256, require_admin_session, verify_password
@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+import re
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
@@ -32,6 +33,41 @@ class CreateUserRequest(BaseModel):
     username: str
     password: str
 
+    @validator('name')
+    def name_must_be_valid(cls, v):
+        v = v.strip()
+        if len(v) == 0:
+            raise ValueError('Name cannot be empty')
+        if not re.match(r'^[a-zA-Z\s]+$', v):
+            raise ValueError('Name can only contain letters and spaces')
+        if len(v) > 100:
+            raise ValueError('Name too long (max 100 chars)')
+        return v
+
+    @validator('contact')
+    def contact_must_be_digits(cls, v):
+        v = v.strip()
+        if len(v) == 0:
+            raise ValueError('Contact cannot be empty')
+        if not re.match(r'^\d{10}$', v):
+            raise ValueError('Contact must be exactly 10 digits')
+        return v
+
+    @validator('username')
+    def username_must_be_valid(cls, v):
+        v = v.strip()
+        if len(v) == 0:
+            raise ValueError('Username cannot be empty')
+        if len(v) < 3:
+            raise ValueError('Username must be at least 3 characters')
+        return v
+
+    @validator('password')
+    def password_must_be_valid(cls, v):
+        v = v.strip()
+        if len(v) == 0:
+            raise ValueError('Password cannot be empty')
+        return v
 
 # ─── Helper: Auto generate USR001, USR002 format ─────────────────────────────
 def generate_user_id(db) -> str:
@@ -90,7 +126,7 @@ async def create_user(
         contact=body.contact,
         username=body.username,
         password=hashed_pw,
-        created_at=now_npt()       # ← Nepal Time ✅
+        created_at=now_npt()      
     )
 
     db.add(new_user)
