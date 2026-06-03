@@ -21,26 +21,39 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+    @validator('username')
+    def username_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Username cannot be empty')
+        return v.strip()
+
+    @validator('password')
+    def password_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Password cannot be empty')
+        return v.strip()
+
 
 class AnalyseRequest(BaseModel):
     password: str
 
-    @validator("password")
+    @validator('password')
     def validate_password(cls, v):
         if v is None:
-            raise ValueError("Password cannot be empty")
-
+            raise ValueError('Password cannot be empty')
         v = v.strip()
-
         if len(v) == 0:
-            raise ValueError("Password cannot be empty")
-
+            raise ValueError('Password cannot be empty')
         return v
 
 
-# ─── LOGIN ────────────────────────────────────────────────────────────────────
+# ─── POST /user/login ─────────────────────────────────────────────────────────
 @router.post("/login")
-async def user_login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
+async def user_login(
+    request: Request,
+    body: LoginRequest,
+    db: Session = Depends(get_db)
+):
     from app.models.schemas import User
 
     user = db.query(User).filter(User.username == body.username).first()
@@ -59,14 +72,14 @@ async def user_login(request: Request, body: LoginRequest, db: Session = Depends
     }
 
 
-# ─── LOGOUT ───────────────────────────────────────────────────────────────────
+# ─── POST /user/logout ────────────────────────────────────────────────────────
 @router.post("/logout")
 async def user_logout(request: Request):
     request.session.clear()
     return {"message": "Logged out successfully"}
 
 
-# ─── CURRENT USER ─────────────────────────────────────────────────────────────
+# ─── GET /user/me ─────────────────────────────────────────────────────────────
 @router.get("/me")
 async def get_current_user(
     request: Request,
@@ -89,7 +102,7 @@ async def get_current_user(
     }
 
 
-# ─── PASSWORD ANALYSIS ───────────────────────────────────────────────────────
+# ─── POST /user/analyse ───────────────────────────────────────────────────────
 @router.post("/analyse")
 async def analyse_password(
     request: Request,
@@ -102,13 +115,13 @@ async def analyse_password(
     # Step 1: Clean password (already validated by Pydantic)
     password = body.password
 
-    # Step 2: Hash password
+    # Step 2: SHA-256 hash
     hashed = hash_password_sha256(password)
 
     # Step 3: ML classification
     result = classify_password(password)
 
-    # Step 4: Save to DB
+    # Step 4: Save to DB with Nepal Time
     analysis = PasswordAnalysis(
         user_id=user_id,
         hash_password=hashed,
@@ -127,7 +140,7 @@ async def analyse_password(
     }
 
 
-# ─── HISTORY ──────────────────────────────────────────────────────────────────
+# ─── GET /user/history ────────────────────────────────────────────────────────
 @router.get("/history")
 async def get_user_history(
     request: Request,

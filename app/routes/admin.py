@@ -5,10 +5,10 @@ from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.core.security import hash_password_sha256, require_admin_session, verify_password
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
-import re
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
@@ -26,6 +26,19 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+    @validator('username')
+    def username_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Username cannot be empty')
+        return v.strip()
+
+    @validator('password')
+    def password_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Password cannot be empty')
+        return v.strip()
+
 
 class CreateUserRequest(BaseModel):
     name: str
@@ -60,6 +73,8 @@ class CreateUserRequest(BaseModel):
             raise ValueError('Username cannot be empty')
         if len(v) < 3:
             raise ValueError('Username must be at least 3 characters')
+        if len(v) > 50:
+            raise ValueError('Username too long (max 50 chars)')
         return v
 
     @validator('password')
@@ -67,16 +82,26 @@ class CreateUserRequest(BaseModel):
         v = v.strip()
         if len(v) == 0:
             raise ValueError('Password cannot be empty')
+        if len(v) < 4:
+            raise ValueError('Password must be at least 4 characters')
         return v
+
 
 # ─── Helper: Auto generate USR001, USR002 format ─────────────────────────────
 def generate_user_id(db) -> str:
     from app.models.schemas import User
-    last_user = db.query(User).order_by(User.sn.desc()).first()
-    if not last_user:
+    all_users = db.query(User.user_id).all()
+    if not all_users:
         return "USR001"
-    last_number = int(last_user.user_id.replace("USR", ""))
-    new_number = last_number + 1
+    numbers = []
+    for u in all_users:
+        try:
+            numbers.append(int(u.user_id.replace("USR", "")))
+        except:
+            pass
+    if not numbers:
+        return "USR001"
+    new_number = max(numbers) + 1
     return f"USR{new_number:03d}"
 
 
@@ -126,7 +151,7 @@ async def create_user(
         contact=body.contact,
         username=body.username,
         password=hashed_pw,
-        created_at=now_npt()      
+        created_at=now_npt()
     )
 
     db.add(new_user)

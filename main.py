@@ -1,10 +1,11 @@
 """
-main.py :Password Analyzer Backend
+main.py — Password Analyzer Backend
 FastAPI + MySQL + Session Auth + SHA-256 + Random Forest
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from app.core.database import engine
 from app.core.session import setup_session_middleware
@@ -17,19 +18,30 @@ from app.ml.password_classifier import load_model
 Base.metadata.create_all(bind=engine)
 
 
+# ─── Lifespan (replaces deprecated @app.on_event) ────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    load_model()
+    print("🚀 Password Analyzer Backend is ready!")
+    yield
+    # Shutdown (nothing needed)
+
+
 # ─── App instance ─────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Password Analyzer API",
     description="Backend for Password Strength Analyzer using SHA-256 + Random Forest",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
-#  Session Middleware 
+# ─── Session Middleware ───────────────────────────────────────────────────────
 setup_session_middleware(app)
 
 
-#  CORS — allow Next.js frontend 
+# ─── CORS — allow Next.js frontend ───────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -42,16 +54,10 @@ app.add_middleware(
 )
 
 
-# Routers
+# ─── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(admin.router)
 app.include_router(user.router)
 
-
-# Startup event — load ML model 
-@app.on_event("startup")
-async def startup_event():
-    load_model()
-    print("🚀 Password Analyzer Backend is ready!")
 
 # ─── Root ─────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
